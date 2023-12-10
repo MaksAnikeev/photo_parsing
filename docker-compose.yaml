@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  parsing:
+    build: .
+    command: >
+      /bin/sh -c "python3 server.py"
+    environment:
+      INTERVAL_SECS: ${INTERVAL_SECS-2}
+      LOGGING: ${LOGGING-TRUE}
+      ARCHIVE_PATH: ${ARCHIVE_PATH-'test_photos'}
+
