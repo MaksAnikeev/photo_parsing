@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 
-from aiohttp import web
-import asyncio
-import os
-import aiofiles
-import datetime
-import logging
 import argparse
+import asyncio
+import logging
+import os
+
+import aiofiles
+from aiohttp import web
 from environs import Env
 
 
@@ -15,8 +15,9 @@ async def archive(request):
     try:
         folder_path = os.path.join(photo_archive_path, folder_name)
         files = os.listdir(folder_path)
-    except:
-        raise web.HTTPNotFound(text='404: Not Found \nАрхив не существует или был удален')
+    except FileNotFoundError:
+        raise web.HTTPNotFound(text='404: Not Found \n'
+                                    'Архив не существует или был удален')
 
     zip_command = ['zip', '-r', '-9', '-', *files]
 
@@ -39,20 +40,15 @@ async def archive(request):
             await response.write(part_of_archive)
             logging.info(f'Sending archive chunk {chunk}')
 
-            # if chunk == 5:
-            #     raise SystemExit()
-
             await asyncio.sleep(INTERVAL_SECS)
     except ConnectionResetError:
         logging.info('CancelledError')
         raise
     finally:
         logging.info('Download was finished or interrupted')
-        # web.close()
-
+        zip_command2 = ['pkill', '-15', 'zip']
+        await asyncio.create_subprocess_exec(*zip_command2)
     return response
-
-
 
 
 async def handle_index_page(request):
@@ -62,29 +58,32 @@ async def handle_index_page(request):
 
 
 if __name__ == '__main__':
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('delay',
-    #                     type=int,
-    #                     nargs='?',
-    #                     help='задержка по загрузке частей архива',
-    #                     default=0)
-    # parser.add_argument('logging',
-    #                     nargs='?',
-    #                     help='включение логирования',
-    #                     default=False)
-    # parser.add_argument('archive_path',
-    #                     nargs='?',
-    #                     help='папка где хранятся архивы фотографий',
-    #                     default='test_photos')
-    #
-    # args = parser.parse_args()
-    #
-    # INTERVAL_SECS = args.folder
+    """ Вариант использование argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('delay',
+                        type=int,
+                        nargs='?',
+                        help='задержка по загрузке частей архива',
+                        default=0)
+    parser.add_argument('logging',
+                        nargs='?',
+                        help='включение логирования',
+                        default=False)
+    parser.add_argument('archive_path',
+                        nargs='?',
+                        help='папка где хранятся архивы фотографий',
+                        default='test_photos')
 
-    # if args.logging:
-    #     logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
-    #                         level=logging.DEBUG)
+    args = parser.parse_args()
 
+    INTERVAL_SECS = args.folder
+
+    if args.logging:
+        logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# '
+                                   u'%(levelname)-8s [%(asctime)s]'
+                                   u'  %(message)s',
+                            level=logging.DEBUG)
+    """
     env = Env()
     env.read_env()
 
@@ -93,7 +92,9 @@ if __name__ == '__main__':
     photo_archive_path = env('ARCHIVE_PATH', 'test_photos')
 
     if switch_logging:
-        logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# %(levelname)-8s [%(asctime)s]  %(message)s',
+        logging.basicConfig(format=u'%(filename)s[LINE:%(lineno)d]# '
+                                   u'%(levelname)-8s [%(asctime)s]'
+                                   u'  %(message)s',
                             level=logging.DEBUG)
     app = web.Application()
     app.add_routes([
