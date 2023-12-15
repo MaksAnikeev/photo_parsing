@@ -8,10 +8,11 @@ import os
 import aiofiles
 from aiohttp import web
 from environs import Env
+from functools import partial
 
 
-async def archive(request):
-    folder_name = request.match_info.get('archive_hash')
+async def archive(request, photo_archive_path, interval_secs):
+    folder_name = request.match_info['archive_hash']
     try:
         folder_path = os.path.join(photo_archive_path, folder_name)
         files = os.listdir(folder_path)
@@ -30,24 +31,34 @@ async def archive(request):
     response.headers['Content-Disposition'] = 'attachment; filename = "photo_archive.zip"'
 
     chunk = 0
+    part_of_archive = True
     await response.prepare(request)
     try:
-        while True:
+        while part_of_archive:
             chunk += 1
             part_of_archive = await zip_process.stdout.read(300000)
-            if not part_of_archive:
-                break
             await response.write(part_of_archive)
             logging.info(f'Sending archive chunk {chunk}')
 
-            await asyncio.sleep(INTERVAL_SECS)
+            await asyncio.sleep(interval_secs)
+
     except ConnectionResetError:
         logging.info('CancelledError')
         raise
+
     finally:
-        logging.info('Download was finished or interrupted')
-        zip_command2 = ['pkill', '-15', 'zip']
-        await asyncio.create_subprocess_exec(*zip_command2)
+        if zip_process.returncode == None:
+            zip_process.terminate()
+            await zip_process.communicate()
+        """
+        Вариант с try except:
+        try:
+            zip_process.terminate()
+            await zip_process.communicate()
+            logging.info('Download was interrupted')
+        except OSError:
+            logging.info('Download was finished successfully')
+        """
     return response
 
 
@@ -87,7 +98,7 @@ if __name__ == '__main__':
     env = Env()
     env.read_env()
 
-    INTERVAL_SECS = env.int('INTERVAL_SECS', 0)
+    interval_secs = env.int('INTERVAL_SECS', 0)
     switch_logging = env.bool('LOGGING', False)
     photo_archive_path = env('ARCHIVE_PATH', 'test_photos')
 
@@ -99,6 +110,8 @@ if __name__ == '__main__':
     app = web.Application()
     app.add_routes([
         web.get('/', handle_index_page),
-        web.get('/archive/{archive_hash}/', archive),
-    ])
+        web.get('/archive/{archive_hash}/',
+                partial(archive,
+                        photo_archive_path=photo_archive_path,
+                        interval_secs=interval_secs))])
     web.run_app(app)
